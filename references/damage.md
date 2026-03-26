@@ -44,6 +44,12 @@ Závisí na orientaci cíle vůči útočníkovi:
 Při **zničení lokace** (IS = 0):
 - Každý další bod poškození do IS způsobuje hod na critical hits
 
+### Through-Armor Critical (TAC)
+Výjimka: hod **2** na Hit Location Table spustí crit check **i bez průniku pancíře**, pokud útok způsobil alespoň 1 bod poškození. Pancíř nemusí být proražen — samotný hod 2 stačí.
+
+> 📖 *„A roll of 2 on the Hit Location Table provides a chance for a critical hit, even if the attack did not damage internal structure (though the attack must still have dealt at least 1 point of damage). This is known as a through-armor critical (TAC) hit."*
+> — GoAC Rulebook, str. 31, *Through-Armor Critical Hit*
+
 ### Applying Critical Hits
 1. Hoď 2D6:
    - 2–7: žádný crit
