@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Skill Packager</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 36px; width: 480px; }
+  h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 4px; }
+  .sub { font-size: 0.85rem; color: #64748b; margin-bottom: 28px; }
+  .drop { border: 2px dashed #2d3148; border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all .2s; color: #64748b; }
+  .drop:hover { border-color: #6366f1; background: #1e2035; color: #a5b4fc; }
+  .drop svg { margin-bottom: 12px; }
+  .drop p { font-size: 0.9rem; }
+  .drop small { font-size: 0.75rem; opacity: .7; }
+  #fileinput { display: none; }
+  .files { margin-top: 20px; display: none; }
+  .files-header { font-size: 0.78rem; color: #64748b; margin-bottom: 8px; }
+  .file-list { background: #12141e; border-radius: 6px; padding: 10px 14px; max-height: 160px; overflow-y: auto; font-size: 0.78rem; color: #94a3b8; line-height: 1.8; }
+  .file-list .skipped { color: #475569; text-decoration: line-through; }
+  .btn { width: 100%; margin-top: 20px; padding: 11px; background: #6366f1; color: white; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 500; cursor: pointer; transition: background .2s; display: none; }
+  .btn:hover { background: #4f46e5; }
+  .btn:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
+  .status { margin-top: 14px; font-size: 0.82rem; color: #64748b; text-align: center; min-height: 1.2em; }
+  .status.ok { color: #4ade80; }
+  .status.err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📦 Skill Packager</h1>
+  <p class="sub">Převede složku se skillem na <code>.skill</code> soubor</p>
+
+  <div class="drop" id="drop">
+    <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+    </svg>
+    <p>Klikni pro výběr složky se skillem</p>
+    <small>vybere celou složku včetně podsložek</small>
+    <input type="file" id="fileinput" webkitdirectory multiple>
+  </div>
+
+  <div class="files" id="filesSection">
+    <div class="files-header" id="filesHeader"></div>
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <button class="btn" id="packBtn">Zabalit a stáhnout .skill</button>
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+const EXCLUDE_DIRS = new Set(['__pycache__', 'node_modules', 'evals', '.git']);
+const EXCLUDE_FILES = new Set(['.DS_Store', 'skill-packager.html']);
+const EXCLUDE_GLOBS = [/\.pyc$/, /\.skill$/];
+
+function shouldExclude(relPath) {
+  const parts = relPath.split('/');
+  // Check excluded dirs anywhere in path (evals only at root level)
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (part === 'evals' && i === 1) return true; // root-only
+    if (EXCLUDE_DIRS.has(part)) return true;
+  }
+  const name = parts[parts.length - 1];
+  if (EXCLUDE_FILES.has(name)) return true;
+  if (EXCLUDE_GLOBS.some(r => r.test(name))) return true;
+  return false;
+}
+
+let collectedFiles = [];
+let skillName = '';
+
+const drop = document.getElementById('drop');
+const fileinput = document.getElementById('fileinput');
+const packBtn = document.getElementById('packBtn');
+const status = document.getElementById('status');
+const filesSection = document.getElementById('filesSection');
+const fileList = document.getElementById('fileList');
+const filesHeader = document.getElementById('filesHeader');
+
+drop.addEventListener('click', () => fileinput.click());
+fileinput.addEventListener('change', () => handleFiles(fileinput.files));
+
+function handleFiles(files) {
+  collectedFiles = Array.from(files);
+  if (!collectedFiles.length) return;
+
+  // Derive skill name from common root folder
+  const firstPath = collectedFiles[0].webkitRelativePath || collectedFiles[0].name;
+  skillName = firstPath.split('/')[0];
+
+  // Check SKILL.md exists — match flexibly regardless of path format
+  const hasMd = collectedFiles.some(f => {
+    const p = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+    const parts = p.split('/');
+    return parts[parts.length - 1] === 'SKILL.md';
+  });
+
+  let included = [], skipped = [];
+  collectedFiles.forEach(f => {
+    const rel = f.webkitRelativePath || f.name;
+    if (shouldExclude(rel)) skipped.push(rel);
+    else included.push(rel);
+  });
+
+  // Debug: log all paths to console
+  console.log('skillName:', skillName);
+  console.log('hasMd:', hasMd);
+  collectedFiles.forEach(f => console.log('  webkitRelativePath:', f.webkitRelativePath, '| name:', f.name));
+
+  filesHeader.textContent = `${included.length} souborů bude přidáno, ${skipped.length} přeskočeno`;
+  fileList.innerHTML = [
+    ...included.map(p => `<div>✓ ${p}</div>`),
+    ...skipped.map(p => `<div class="skipped">✗ ${p}</div>`)
+  ].join('');
+
+  filesSection.style.display = 'block';
+  packBtn.style.display = 'block';
+
+  if (!hasMd) {
+    status.textContent = '⚠️ SKILL.md nenalezeno — zkontroluj správnou složku';
+    status.className = 'status err';
+  } else {
+    status.textContent = `Připraveno: ${skillName}`;
+    status.className = 'status';
+  }
+}
+
+packBtn.addEventListener('click', async () => {
+  packBtn.disabled = true;
+  status.textContent = 'Balím...';
+  status.className = 'status';
+
+  try {
+    const zip = new JSZip();
+    for (const file of collectedFiles) {
+      const rel = file.webkitRelativePath || file.name;
+      if (shouldExclude(rel)) continue;
+      // arcname: relative to skill folder's parent (same as Python script)
+      const data = await file.arrayBuffer();
+      zip.file(rel, data);
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${skillName}.skill`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    status.textContent = `✅ ${skillName}.skill stažen!`;
+    status.className = 'status ok';
+  } catch (err) {
+    status.textContent = '❌ Chyba: ' + err.message;
+    status.className = 'status err';
+  }
+
+  packBtn.disabled = false;
+});
+</script>
+</body>
+</html>
